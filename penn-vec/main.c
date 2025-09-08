@@ -1,11 +1,11 @@
 #include "./Vec.h"
 
+#include <ctype.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <stdint.h>
-#include <ctype.h>
 
 #define BUF_LEN 4096U
 #define PROMPT "give me a decimal integer: "
@@ -38,8 +38,8 @@ int main() {
     input[res] = '\0';
 
     char* end = NULL;
-    int val = (int) strtol(input, &end, BASE_10);
-    if(!isspace(*end)) {
+    int val = (int)strtol(input, &end, BASE_10);
+    if (!isspace(*end)) {
       fprintf(stderr, "error parsing user input into an integer!\n");
       continue;
     }
@@ -47,14 +47,13 @@ int main() {
     // intptr_t is a C defined type of integer
     // that is safe to cast to a pointer
     // uintptr_t is an unsigned version
-    vec_push_back(&numbers, (ptr_t)(intptr_t) val);
+    vec_push_back(&numbers, (ptr_t)(intptr_t)val);
 
     fprintf(stderr, "You have typed in the number(s):");
     for (size_t i = 0; i < numbers.length; i++) {
       fprintf(stderr, " %d", (int)(intptr_t)vec_get(&numbers, i));
     }
     fprintf(stderr, "\n");
-
   }
 
   vec_destroy(&numbers);

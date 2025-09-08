@@ -1,6 +1,8 @@
 #ifndef VEC_H_
 #define VEC_H_
 
+#define MAX(x, y) ((x) >= (y) ? (x) : (y))
+
 #include <stdbool.h>
 #include <stddef.h>  // for size_t
 
@@ -37,24 +39,24 @@ Vec vec_new(size_t initial_capacity, ptr_dtor_fn ele_dtor_fn);
  *
  * @param vec, a pointer to the vector we want to grab the capacity of.
  */
-// TODO: finish this macro
-#define vec_capacity(vec) (vec->capacity)
+
+#define vec_capacity(vec) ((vec)->capacity)
 
 /* Returns the current length of the Vec
  * written as a function-like macro
  *
  * @param vec, a pointer to the vector we want to grab the len of.
  */
-// TODO: finish this macro
-#define vec_len(vec) (vec->length)
+
+#define vec_len(vec) ((vec)->length)
 
 /* Checks if the Vec is empty
  * written as a function-like macro
  *
  * @param vec, a pointer to the vector we want to check emptiness of.
  */
-// TODO: finish this macro
-#define vec_is_empty(vec) (vec->length == 0)
+
+#define vec_is_empty(vec) ((vec)->length == 0)
 
 /* Gets the specified element of the Vec
  *
