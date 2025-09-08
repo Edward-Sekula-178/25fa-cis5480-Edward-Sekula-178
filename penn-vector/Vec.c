@@ -14,6 +14,7 @@ Vec vec_new(size_t initial_capacity, ptr_dtor_fn ele_dtor_fn) {
 
 ptr_t vec_get(Vec* self, size_t index) {
   if (index >= vec_len(self)) {
+    vec_destroy(self);
     panic("vec_get: index out of range");
   }
   return self->data[index];
@@ -21,6 +22,7 @@ ptr_t vec_get(Vec* self, size_t index) {
 
 void vec_set(Vec* self, size_t index, ptr_t new_ele) {
   if (index >= vec_len(self)) {
+    vec_destroy(self);
     panic("vec_set: index out of range");
   }
   if (self->ele_dtor_fn != NULL) {
@@ -56,6 +58,7 @@ bool vec_pop_back(Vec* self) {
 
 void vec_insert(Vec* self, size_t index, ptr_t new_ele) {
   if (index > vec_len(self)) {
+    vec_destroy(self);
     panic("vec_insert: index out of bounds");
   }
 
@@ -79,6 +82,7 @@ void vec_insert(Vec* self, size_t index, ptr_t new_ele) {
 
 void vec_erase(Vec* self, size_t index) {
   if (index >= vec_len(self)) {
+    vec_destroy(self);
     panic("vec_erase: index out of bounds");
   }
 
@@ -97,6 +101,7 @@ void vec_resize(Vec* self, size_t new_capacity) {
   ptr_t* new_data = malloc(sizeof(ptr_t) * new_capacity);
 
   if (new_data == NULL) {
+    vec_destroy(self);
     panic("vec_resize: allocation failure");
   }
 
@@ -125,5 +130,4 @@ void vec_destroy(Vec* self) {
   self->capacity = 0;
   self->length = 0;
   self->ele_dtor_fn = NULL;
-  free(self);
 }
