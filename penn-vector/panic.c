@@ -4,7 +4,7 @@
 #include <string.h>
 #include <unistd.h>
 
-[[noreturn]] void print_and_abort(const char* error_message) {
+_Noreturn void print_and_abort(const char* error_message) {
   ssize_t len = (ssize_t)strlen(error_message);
   ssize_t total = 0;
   while (total != len) {

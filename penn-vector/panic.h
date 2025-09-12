@@ -14,6 +14,6 @@
 
 #endif
 
-[[noreturn]] void print_and_abort(const char* error_message);
+_Noreturn void print_and_abort(const char* error_message);
 
 #endif  // PANIC_H_
