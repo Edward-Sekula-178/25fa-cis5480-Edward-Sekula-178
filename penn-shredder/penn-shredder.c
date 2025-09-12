@@ -10,6 +10,8 @@
 #include <split.h>
 #include "../penn-vector/Vec.h"
 
+const int max_line_length = 4096;
+
 static volatile sig_atomic_t got_sigint = 0;
 static volatile sig_atomic_t timed_out = 0;
 static volatile sig_atomic_t child_alive = 0;
@@ -53,8 +55,9 @@ int main(int argc, char* argv[]) {
   if (argc == 2) {
     char* end = NULL;
     long v = strtol(argv[1], &end, 10);
-    if (*end != '\0' || v < 0 || v > INT_MAX)
+    if (*end != '\0' || v < 0 || v > max_line_length) {
       return EXIT_FAILURE;
+    }
     timeout = (int)v;
   }
 
@@ -102,8 +105,9 @@ int main(int argc, char* argv[]) {
     }
 
     size_t n = (size_t)nr;
-    if (n == sizeof(cmd))
-      n = sizeof(cmd) - 1; /* ensure space for NUL */
+    if (n == sizeof(cmd)) {
+      n = sizeof(cmd) - 1;
+    } /* ensure space for NUL */
     cmd[n] = '\0';
 
     /* Tokenize (split mutates cmd) */
@@ -122,7 +126,7 @@ int main(int argc, char* argv[]) {
       return EXIT_FAILURE;
     }
     for (size_t i = 0; i < argc_exec; ++i) {
-      argv_exec[i] = (char*)vec_at(&tokens, i);
+      argv_exec[i] = (char*)vec_get(&tokens, i);
     }
     argv_exec[argc_exec] = NULL;
 
