@@ -17,7 +17,7 @@
 #include <sys/wait.h>
 #include <unistd.h> /* write, read, fork, execve, alarm, _exit, kill */
 
-#include "../penn-vector/Vec.h"
+#include "./Vec.h"
 #include "penn-shredder.h"
 #include "split.h"
 

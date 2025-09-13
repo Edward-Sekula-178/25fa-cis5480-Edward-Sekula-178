@@ -57,7 +57,6 @@
 
 #include <stdbool.h>
 #include <stdlib.h>  // malloc, realloc, free
-#include "./panic.h"
 
 // the destroy function takes in a pointer
 // to an element of the vector.

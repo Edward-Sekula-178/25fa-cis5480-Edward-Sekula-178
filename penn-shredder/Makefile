@@ -41,8 +41,7 @@ HEADERS = $(wildcard *.h)
 all: $(PROG)
 
 $(PROG) : $(OBJS) $(HEADERS)
-	$(CC) -o $@ $(OBJS)	../penn-vector/Vec.c	../penn-vector/panic.c
-
+	$(CC) -o $@ $(OBJS)
 %.o: %.c $(HEADERS)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c $<
 

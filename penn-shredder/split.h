@@ -1,8 +1,7 @@
 #ifndef SPLIT_H
 #define SPLIT_H
 
-#include "../penn-vector/Vec.h"
-
+#include "./Vec.h"
 /*
  * Splits a string into non-empty tokens using the given delimiters.
  * The returned vector contains pointers to tokens within the original string.

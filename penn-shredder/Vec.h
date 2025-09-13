@@ -5,6 +5,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>  // for size_t
+#include "./panic.h"
 
 typedef void* ptr_t;
 typedef void (*ptr_dtor_fn)(ptr_t);

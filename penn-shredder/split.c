@@ -1,5 +1,6 @@
 #include <string.h>
-#include "../penn-vector/Vec.h"
+#include "./Vec.h"
+
 /*!
  * Breaks a given string into a sequence of non-empty tokens.
  * The tokens are stored in a vector and returned.
