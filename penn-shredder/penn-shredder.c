@@ -5,7 +5,7 @@
  * Spec highlights:
  *  - Prompt to STDERR. Ctrl-D at empty line exits. Ctrl-C forwards to child or
  * re-prompts.
- *  - Only: alarm, execve, exit/_exit, fork, kill, read, sigaction, wait, write
+ *  - Only: alarm, execve, exit, fork, kill, read, sigaction, wait, write
  *    + strtol, exit, free, malloc, perror, strlen
  */
 
@@ -15,7 +15,7 @@
 #include <stdlib.h> /* malloc, free, strtol, exit */
 #include <string.h> /* strlen */
 #include <sys/wait.h>
-#include <unistd.h> /* write, read, fork, execve, alarm, _exit, kill */
+#include <unistd.h>
 
 #include "./Vec.h"
 #include "penn-shredder.h"
@@ -54,11 +54,10 @@ static void on_sigalrm(int sig) {
 /* -------------------- helpers (non-signal context) -------------------- */
 
 static int install_handler(int signo, void (*handler)(int)) {
-  struct sigaction sa_h = (struct sigaction){0};
-  sa_h.sa_handler = handler;
-  sigemptyset(&sa_h.sa_mask);
-  sa_h.sa_flags = 0;
-  if (sigaction(signo, &sa_h, NULL) == -1) {
+  struct sigaction sa = {0}; /* all fields, including sa_mask, zeroed */
+  sa.sa_handler = handler;
+  /* sa.sa_mask is already empty; sa.sa_flags is 0 */
+  if (sigaction(signo, &sa, NULL) == -1) {
     perror("sigaction");
     return -1;
   }
@@ -156,10 +155,10 @@ static int run_command(char** argv_exec, int timeout_secs) {
 
   if (pid == 0) {
     alarm(0); /* child must not time out itself */
-    extern char** environ;
-    execve(argv_exec[0], argv_exec, environ);
+    char* const empty_envp[] = {NULL};
+    execve(argv_exec[0], argv_exec, empty_envp);
     perror("execve");
-    _exit(EXIT_FAILURE);
+    exit(EXIT_FAILURE);
   }
 
   /* parent */
@@ -204,7 +203,7 @@ int main(int argc, char* argv[]) {
     switch (read_command(cmd, sizeof(cmd), &n_read)) {
       case RR_EOF:
         (void)write(STDERR_FILENO, "\n", 1);
-        _exit(EXIT_SUCCESS);
+        exit(EXIT_SUCCESS);
       case RR_INTR:
         /* interrupted while idle: just re-prompt */
         continue;
