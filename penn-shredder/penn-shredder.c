@@ -54,10 +54,10 @@ static void on_sigalrm(int sig) {
 /* -------------------- helpers (non-signal context) -------------------- */
 
 static int install_handler(int signo, void (*handler)(int)) {
-  struct sigaction sa = {0}; /* all fields, including sa_mask, zeroed */
-  sa.sa_handler = handler;
+  struct sigaction sa_h = {0}; /* all fields, including sa_mask, zeroed */
+  sa_h.sa_handler = handler;
   /* sa.sa_mask is already empty; sa.sa_flags is 0 */
-  if (sigaction(signo, &sa, NULL) == -1) {
+  if (sigaction(signo, &sa_h, NULL) == -1) {
     perror("sigaction");
     return -1;
   }
