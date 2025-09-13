@@ -64,10 +64,6 @@ static int install_handler(int signo, void (*handler)(int)) {
   return 0;
 }
 
-static void write_prompt(void) {
-  (void)write(STDERR_FILENO, PROMPT, strlen(PROMPT));
-}
-
 static int parse_timeout(int argc, char** argv, int* timeout_out) {
   if (argc > 2) {
     return -1;
@@ -196,7 +192,7 @@ int main(int argc, char* argv[]) {
   }
 
   for (;;) {
-    write_prompt();
+    (void)write(STDERR_FILENO, PROMPT, strlen(PROMPT));
 
     char cmd[MAX_LINE_LEN];
     ssize_t n_read = 0;
