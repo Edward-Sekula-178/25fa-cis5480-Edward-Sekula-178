@@ -1,32 +1,45 @@
+/**
+ * @file penn-shredder.c
+ * @brief Minimal shell that executes a command with an optional timeout.
+ *
+ * Spec highlights:
+ *  - Prompt to STDERR. Ctrl-D at empty line exits. Ctrl-C forwards to child or
+ * re-prompts.
+ *  - Only: alarm, execve, exit/_exit, fork, kill, read, sigaction, wait, write
+ *    + strtol, exit, free, malloc, perror, strlen
+ */
+
 #include <errno.h>
 #include <signal.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <stdio.h>  /* perror */
+#include <stdlib.h> /* malloc, free, strtol, exit */
+#include <string.h> /* strlen */
 #include <sys/wait.h>
-#include <unistd.h>
+#include <unistd.h> /* write, read, fork, execve, alarm, _exit, kill */
 
-#include <penn-shredder.h>
-#include <split.h>
 #include "../penn-vector/Vec.h"
+#include "penn-shredder.h"
+#include "split.h"
 
-const int max_line_length = 4096;
+/* -------------------- constants -------------------- */
 
-static volatile sig_atomic_t got_sigint = 0;
+enum { MAX_LINE_LEN = 4096 };
+
+/* -------------------- signal-visible state -------------------- */
+
 static volatile sig_atomic_t timed_out = 0;
 static volatile sig_atomic_t child_alive = 0;
-static volatile sig_atomic_t child_killed = 0;
 static pid_t child_pid = -1;
+
+/* -------------------- handlers -------------------- */
 
 static void on_sigint(int sig) {
   (void)sig;
-  got_sigint = 1;
   if (child_alive && child_pid > 0) {
     kill(child_pid, SIGINT);
+    (void)write(STDERR_FILENO, "\n", 1);
   } else {
-    /* Print newline to move to a fresh prompt */
-    const char nl = '\n';
-    write(STDERR_FILENO, &nl, 1);
+    (void)write(STDERR_FILENO, "\n", 1);
   }
 }
 
@@ -35,152 +48,193 @@ static void on_sigalrm(int sig) {
   timed_out = 1;
   if (child_alive && child_pid > 0) {
     kill(child_pid, SIGKILL);
-    child_killed = 1;
   }
 }
 
-static ssize_t read_line(char* buf, size_t cap) {
-  for (;;) {
-    ssize_t r = read(STDIN_FILENO, buf, cap);
-    if (r < 0 && errno == EINTR)
-      continue;
-    return r;
+/* -------------------- helpers (non-signal context) -------------------- */
+
+static int install_handler(int signo, void (*handler)(int)) {
+  struct sigaction sa_h = (struct sigaction){0};
+  sa_h.sa_handler = handler;
+  sigemptyset(&sa_h.sa_mask);
+  sa_h.sa_flags = 0;
+  if (sigaction(signo, &sa_h, NULL) == -1) {
+    perror("sigaction");
+    return -1;
   }
+  return 0;
 }
+
+static void write_prompt(void) {
+  (void)write(STDERR_FILENO, PROMPT, strlen(PROMPT));
+}
+
+static int parse_timeout(int argc, char** argv, int* timeout_out) {
+  if (argc > 2) {
+    return -1;
+  }
+  *timeout_out = 0;
+  if (argc == 2) {
+    char* end = NULL;
+    *timeout_out = (int)strtol(argv[1], &end, 10);
+    if (*timeout_out < 0) {
+      return -1;
+    }
+  }
+  return 0;
+}
+
+typedef enum { RR_OK, RR_EOF, RR_INTR, RR_ERR } ReadRes;
+
+static ReadRes read_command(char* buf, size_t cap, ssize_t* n_out) {
+  ssize_t n_read = read(STDIN_FILENO, buf, cap);
+  if (n_read == 0) {
+    return RR_EOF;
+  }
+  if (n_read < 0) {
+    if (errno == EINTR) {
+      return RR_INTR;
+    }
+    perror("read");
+    return RR_ERR;
+  }
+  if ((size_t)n_read == cap) {
+    n_read = (ssize_t)cap - 1;
+  }
+  buf[n_read] = '\0';
+  *n_out = n_read;
+  return RR_OK;
+}
+
+static ssize_t build_argv(Vec* tokens, char*** out_argv) {
+  size_t argc_exec = vec_len(tokens);
+  if (argc_exec == 0) {
+    *out_argv = NULL;
+    return 0;
+  }
+  char** argv_exec = (char**)malloc((argc_exec + 1) * sizeof(char*));
+  if (!argv_exec) {
+    perror("malloc");
+    *out_argv = NULL;
+    return -1;
+  }
+  for (size_t i = 0; i < argc_exec; ++i) {
+    argv_exec[i] = (char*)vec_get(tokens, i); /* token points into cmd buffer */
+  }
+  argv_exec[argc_exec] = NULL;
+  *out_argv = argv_exec;
+  return (ssize_t)argc_exec;
+}
+
+static int reap_one_child(int* status_out) {
+  int status = 0;
+  for (;;) {
+    pid_t w_pid = wait(&status);
+    if (w_pid == -1 && errno == EINTR) {
+      continue;
+    }
+    if (w_pid == -1) {
+      perror("wait");
+      return -1;
+    }
+    break;
+  }
+  if (status_out) {
+    *status_out = status;
+  }
+  return 0;
+}
+
+/* Spawn, enforce timeout, print catchphrase if needed. Returns 0/EXIT_FAILURE.
+ */
+static int run_command(char** argv_exec, int timeout_secs) {
+  pid_t pid = fork();
+  if (pid == -1) {
+    perror("fork");
+    return EXIT_FAILURE;
+  }
+
+  if (pid == 0) {
+    alarm(0); /* child must not time out itself */
+    extern char** environ;
+    execve(argv_exec[0], argv_exec, environ);
+    perror("execve");
+    _exit(EXIT_FAILURE);
+  }
+
+  /* parent */
+  child_pid = pid;
+  child_alive = 1;
+  timed_out = 0;
+  if (timeout_secs > 0) {
+    alarm((unsigned)timeout_secs);
+  }
+
+  int status = 0;
+  (void)reap_one_child(&status);
+
+  child_alive = 0;
+  alarm(0);
+
+  if (timed_out || (WIFSIGNALED(status) && WTERMSIG(status) == SIGALRM)) {
+    (void)write(STDOUT_FILENO, CATCHPHRASE, strlen(CATCHPHRASE));
+  }
+  return 0;
+}
+
+/* -------------------- main -------------------- */
 
 int main(int argc, char* argv[]) {
   int timeout = 0;
-  if (argc > 2)
-    return EXIT_FAILURE;
-  if (argc == 2) {
-    char* end = NULL;
-    long v = strtol(argv[1], &end, 10);
-    if (*end != '\0' || v < 0 || v > max_line_length) {
-      return EXIT_FAILURE;
-    }
-    timeout = (int)v;
-  }
-
-  struct sigaction sa = {0};
-  sa.sa_handler = on_sigint;
-  sigemptyset(&sa.sa_mask);
-  sa.sa_flags = 0;
-  if (sigaction(SIGINT, &sa, NULL) == -1) {
-    perror("sigaction(SIGINT)");
+  if (parse_timeout(argc, argv, &timeout) != 0) {
     return EXIT_FAILURE;
   }
-
-  struct sigaction sa_alrm = {0};
-  sa_alrm.sa_handler = on_sigalrm;
-  sigemptyset(&sa_alrm.sa_mask);
-  sa_alrm.sa_flags = 0;
-  if (sigaction(SIGALRM, &sa_alrm, NULL) == -1) {
-    perror("sigaction(SIGALRM)");
+  if (install_handler(SIGINT, on_sigint) == -1) {
+    return EXIT_FAILURE;
+  }
+  if (install_handler(SIGALRM, on_sigalrm) == -1) {
     return EXIT_FAILURE;
   }
 
   for (;;) {
-    got_sigint = 0;
-    timed_out = 0;
-    child_killed = 0;
-    child_alive = 0;
-    child_pid = -1;
+    write_prompt();
 
-    /* Prompt to stderr per spec */
-    write(STDERR_FILENO, PROMPT, strlen(PROMPT));
-
-    /* Read input */
-    const size_t max_line_len = 4096;
-    char cmd[max_line_len];
-    ssize_t nr = read_line(cmd, sizeof(cmd));
-    if (nr == 0) {
-      /* EOF at beginning of line: exit */
-      const char nl = '\n';
-      write(STDERR_FILENO, &nl, 1);
-      _exit(EXIT_SUCCESS);
-    }
-    if (nr < 0) {
-      perror("read");
-      return EXIT_FAILURE;
-    }
-
-    size_t n = (size_t)nr;
-    if (n == sizeof(cmd)) {
-      n = sizeof(cmd) - 1;
-    } /* ensure space for NUL */
-    cmd[n] = '\0';
-
-    /* Tokenize (split mutates cmd) */
-    Vec tokens = split_string(cmd, " \t\n");
-    size_t argc_exec = vec_len(&tokens);
-    if (argc_exec == 0) {
-      vec_destroy(&tokens);
-      continue; /* empty or all whitespace: ignore */
-    }
-
-    /* Build null-terminated argv with malloc as required */
-    char** argv_exec = malloc((argc_exec + 1) * sizeof(char*));
-    if (!argv_exec) {
-      perror("malloc");
-      vec_destroy(&tokens);
-      return EXIT_FAILURE;
-    }
-    for (size_t i = 0; i < argc_exec; ++i) {
-      argv_exec[i] = (char*)vec_get(&tokens, i);
-    }
-    argv_exec[argc_exec] = NULL;
-
-    pid_t pid = fork();
-    if (pid == -1) {
-      perror("fork");
-      free(argv_exec);
-      vec_destroy(&tokens);
-      return EXIT_FAILURE;
-    }
-
-    if (pid == 0) {
-      /* Child: cancel any inherited alarm just in case */
-      alarm(0);
-      extern char** environ;
-      execve(argv_exec[0], argv_exec, environ);
-      perror("execve");
-      _exit(EXIT_FAILURE);
-    }
-
-    /* Parent */
-    child_pid = pid;
-    child_alive = 1;
-
-    if (timeout > 0)
-      alarm(timeout);
-
-    int status = 0;
-    for (;;) {
-      pid_t w = waitpid(pid, &status, 0);
-      if (w == -1 && errno == EINTR)
+    char cmd[MAX_LINE_LEN];
+    ssize_t n_read = 0;
+    switch (read_command(cmd, sizeof(cmd), &n_read)) {
+      case RR_EOF:
+        (void)write(STDERR_FILENO, "\n", 1);
+        _exit(EXIT_SUCCESS);
+      case RR_INTR:
+        /* interrupted while idle: just re-prompt */
         continue;
-      if (w == -1) {
-        perror("waitpid");
+      case RR_ERR:
+        return EXIT_FAILURE;
+      case RR_OK:
         break;
+    }
+
+    /* Tokenize and build argv */
+    Vec tokens = split_string(cmd, " \t\n");
+    char** argv_exec = NULL;
+    ssize_t argc_exec = build_argv(&tokens, &argv_exec);
+    if (argc_exec <= 0) {
+      vec_destroy(&tokens);
+      if (argc_exec < 0) {
+        return EXIT_FAILURE; /* malloc failure */
       }
-      break;
+      continue; /* empty line */
     }
 
-    /* Child is no longer running */
-    child_alive = 0;
-    alarm(0); /* cancel pending alarm if any */
+    /* Run */
+    int rc_out = run_command(argv_exec, timeout);
 
-    /* Print catchphrase if timed out (either parent killed or child died to
-     * SIGALRM) */
-    int say_catchphrase = 0;
-    if (timed_out || (WIFSIGNALED(status) && WTERMSIG(status) == SIGALRM)) {
-      say_catchphrase = 1;
-    }
-    if (say_catchphrase) {
-      write(STDOUT_FILENO, CATCHPHRASE, strlen(CATCHPHRASE));
-    }
-
+    /* Cleanup */
     free(argv_exec);
     vec_destroy(&tokens);
+
+    if (rc_out != 0) {
+      return EXIT_FAILURE;
+    }
   }
 }
